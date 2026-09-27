@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import {
-  Search, MessagesSquare, FileText, ScrollText, Mic, Globe2, Menu, X, Sparkles,
+  Search, MessagesSquare, FileText, ScrollText, Mic, Globe2, Menu, X,
 } from 'lucide-react'
 import Home from './pages/Home'
 import Research from './pages/Research'
@@ -8,10 +8,9 @@ import ChatPage from './pages/ChatPage'
 import PositionPaperPage from './pages/PositionPaper'
 import DraftResolutionPage from './pages/DraftResolution'
 import SpeechPage from './pages/Speech'
-import Monetization from './pages/Monetization'
 import type { MunContext } from './pages/ChatPage'
 
-export type PageId = 'home' | 'research' | 'chat' | 'pp' | 'dr' | 'speech' | 'monetize'
+export type PageId = 'home' | 'research' | 'chat' | 'pp' | 'dr' | 'speech'
 
 const NAV: { id: PageId; label: string; icon: typeof Search }[] = [
   { id: 'research', label: '资料检索', icon: Search },
@@ -19,11 +18,10 @@ const NAV: { id: PageId; label: string; icon: typeof Search }[] = [
   { id: 'pp', label: '立场文件', icon: FileText },
   { id: 'dr', label: '决议草案', icon: ScrollText },
   { id: 'speech', label: '讲稿', icon: Mic },
-  { id: 'monetize', label: '变现思路', icon: Sparkles },
 ]
 
 export default function App() {
-  const validPages: PageId[] = ['home', 'research', 'chat', 'pp', 'dr', 'speech', 'monetize']
+  const validPages: PageId[] = ['home', 'research', 'chat', 'pp', 'dr', 'speech']
   const hashPage = () => {
     const h = location.hash.replace(/^#\/?/, '') as PageId
     return validPages.includes(h) ? h : 'home'
@@ -95,7 +93,6 @@ export default function App() {
         {page === 'pp' && <PositionPaperPage />}
         {page === 'dr' && <DraftResolutionPage />}
         {page === 'speech' && <SpeechPage />}
-        {page === 'monetize' && <Monetization />}
       </main>
 
       <footer className="border-t border-slate-200 bg-white">
