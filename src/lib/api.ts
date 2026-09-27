@@ -48,9 +48,14 @@ export const api = {
     call<{ text: string }>('content_direction', { ctx }),
 
   notesToResolution: (notes: string, ctx: AICtx) =>
-    call<{ data: {
-      title: string
-      preamb: { phrase: string; text: string }[]
-      oper: { phrase: string; text: string; children?: { phrase: string; text: string }[] }[]
-    } }>('notes_to_resolution', { notes, ctx }),
+    call<{ data: ResolutionJSON }>('notes_to_resolution', { notes, ctx }),
+
+  refineResolution: (current: string, instruction: string, ctx: AICtx) =>
+    call<{ data: ResolutionJSON }>('refine_resolution', { current, instruction, ctx }),
+}
+
+export interface ResolutionJSON {
+  title: string
+  preamb: { phrase: string; text: string }[]
+  oper: { phrase: string; text: string; children?: { phrase: string; text: string }[] }[]
 }

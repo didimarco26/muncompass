@@ -256,6 +256,31 @@ Rules:
   return { ok: true, data: json }
 }
 
+// AI 全文生成/优化已有决议草案（可带修改要求）
+async function stageRefineResolution(p) {
+  const current = String(p.current || '').trim()
+  if (!current) throw new Error('当前草案为空，请先填写或生成内容')
+  const instruction = String(p.instruction || '').trim()
+  const sys = `You are editing a Model UN Draft Resolution (UNA-USA style). Improve the delegate's draft into a complete, formal, well-ordered resolution.
+Requirements:
+- Preserve the delegate's intent; keep the heading fields (Committee/Conference/Sponsors/Signatories/Topic) as given.
+- Ensure 3-5 preambulatory clauses (Charter/treaty basis, past actions, present concern) and 4-7 operative clauses that are concrete and actionable (who/what/how/when); merge duplicates, split vague clauses, fix logical order.
+- Use ONLY standard MUN opening phrases; apply the standard punctuation (PP comma, OP semicolon, final period).
+- If the user gives an instruction, follow it as the priority.
+- Keep document symbols/statistics the user provided; mark anything uncertain in square brackets for verification; NEVER invent symbols or numbers.
+Return STRICT JSON only (no markdown fences) with this shape:
+{"title":"...","preamb":[{"phrase":"...","text":"..."}],"oper":[{"phrase":"...","text":"...","children":[{"phrase":"...","text":"..."}]}]}`
+  const user = `${ctxLine(p.ctx)}\n${instruction ? `Editing instruction: ${instruction}\n\n` : ''}Current draft:\n${current.slice(0, 12000)}`
+  const raw = await callAI(sys, user, 0.5)
+  try {
+    const json = JSON.parse(raw.match(/\{[\s\S]*\}/)[0])
+    if (!Array.isArray(json.preamb) || !Array.isArray(json.oper)) throw new Error('x')
+    return { ok: true, data: json }
+  } catch {
+    throw new Error('AI 返回解析失败，请重试')
+  }
+}
+
 // ---------------- handler ----------------
 async function handler(event) {
   try {
@@ -275,6 +300,7 @@ async function handler(event) {
       case 'pp_section': return respond(200, await stagePPSection(p))
       case 'content_direction': return respond(200, await stageContentDirection(p))
       case 'notes_to_resolution': return respond(200, await stageNotesToResolution(p))
+      case 'refine_resolution': return respond(200, await stageRefineResolution(p))
       default: return respond(400, { ok: false, error: 'unknown stage' })
     }
   } catch (e) {
