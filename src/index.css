@@ -1,0 +1,73 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-slate-50 text-slate-800 antialiased;
+  font-feature-settings: 'cv02','cv03','cv04','cv11';
+}
+
+/* 自定义滚动条 */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; background-clip: content-box; }
+
+@layer components {
+  .card {
+    @apply rounded-2xl bg-white border border-slate-200/80 shadow-sm;
+  }
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-un-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-un-700 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 hover:border-slate-300 active:scale-[0.98];
+  }
+  .input {
+    @apply w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 outline-none transition focus:border-un-400 focus:ring-4 focus:ring-un-100;
+  }
+  .label {
+    @apply block text-sm font-semibold text-slate-700 mb-1.5;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 transition hover:border-un-300 hover:text-un-700 hover:bg-un-50 cursor-pointer;
+  }
+  .section-title {
+    @apply text-2xl md:text-3xl font-bold text-slate-900 tracking-tight;
+  }
+}
+
+/* 文档排版（MUN文件预览） */
+.doc-preview {
+  @apply text-[15px] leading-7 text-slate-800 whitespace-pre-wrap;
+}
+.doc-preview h1 { @apply text-xl font-bold text-center mb-2; }
+.doc-preview h2 { @apply text-base font-bold mt-5 mb-1.5 text-slate-900; }
+
+/* 打字机光标 */
+.typing-caret::after {
+  content: '▍';
+  @apply text-un-500 animate-pulse-soft ml-0.5;
+}
+
+/* 网格背景 */
+.bg-grid {
+  background-image:
+    linear-gradient(to right, rgba(15,23,42,0.045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(15,23,42,0.045) 1px, transparent 1px);
+  background-size: 36px 36px;
+}
+.bg-hero-glow {
+  background:
+    radial-gradient(60% 60% at 20% 10%, rgba(51,119,252,0.14) 0%, transparent 70%),
+    radial-gradient(50% 50% at 85% 20%, rgba(233,175,50,0.12) 0%, transparent 70%),
+    radial-gradient(60% 60% at 50% 100%, rgba(29,86,241,0.10) 0%, transparent 70%);
+}

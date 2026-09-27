@@ -1,0 +1,6 @@
+{
+    "app_name": "mun-assistant",
+    "app_description": "模拟联合国AI助手：议题资料检索、立场文件/决议草案/讲稿写作与AI对话",
+    "capabilities": [],
+    "datasources": {}
+}

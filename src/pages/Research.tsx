@@ -1,0 +1,324 @@
+import { useMemo, useRef, useState } from 'react'
+import {
+  Search, ExternalLink, Newspaper, Loader2, AlertCircle, Globe, Layers, LayoutGrid, Sparkles, Wifi,
+} from 'lucide-react'
+import { SOURCES_DOC, SOURCE_CATS, type Source } from '../data/sources'
+import { ALL_SOURCES_EXTRA } from '../data/sources2'
+import { ALL_COMMITTEES } from '../data/committees2'
+import { LAYER_NAMES } from '../data/committees'
+import { googleSiteLinks } from '../data/unSources'
+import { HOT_TOPICS } from '../data/munData'
+import { smartPickSources } from '../lib/smartSources'
+import { api, type WebResult } from '../lib/api'
+import { CATEGORY_LABEL } from '../lib/recommend'
+
+const ALL_SOURCES: Source[] = [...SOURCES_DOC, ...ALL_SOURCES_EXTRA]
+
+export default function Research() {
+  const [query, setQuery] = useState('sustainability')
+  const [applied, setApplied] = useState('sustainability')
+  const [view, setView] = useState<'sources' | 'committees'>(
+    new URLSearchParams(location.search).get('v') === 'committees' ? 'committees' : 'sources',
+  )
+  const [openLayers, setOpenLayers] = useState<Record<number, boolean>>({ 1: true })
+  const [showAll, setShowAll] = useState(false)
+  const [cat, setCat] = useState('all')
+
+  // 实时网络结果
+  const [live, setLive] = useState<WebResult[] | null>(null)
+  const [liveLoading, setLiveLoading] = useState(false)
+  const [liveErr, setLiveErr] = useState('')
+
+  // 新闻动态
+  const [news, setNews] = useState<WebResult[] | null>(null)
+  const [newsLoading, setNewsLoading] = useState(false)
+  const [newsErr, setNewsErr] = useState('')
+
+  const resultRef = useRef<HTMLDivElement>(null)
+
+  const smart = useMemo(
+    () => (applied ? smartPickSources(applied) : null),
+    [applied],
+  )
+
+  const runSearch = (override?: string) => {
+    const q = (override ?? query).trim()
+    if (!q) return
+    setQuery(q)
+    setApplied(q)
+    setLive(null)
+    setLiveErr('')
+    requestAnimationFrame(() =>
+      setTimeout(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60),
+    )
+  }
+
+  const loadLive = async () => {
+    setLiveLoading(true)
+    setLiveErr('')
+    try {
+      const { list } = await api.webSearch(applied)
+      setLive(list)
+    } catch (e) {
+      setLiveErr(String((e as Error).message))
+    } finally {
+      setLiveLoading(false)
+    }
+  }
+
+  const loadNews = async () => {
+    setNewsLoading(true)
+    setNewsErr('')
+    try {
+      const { list } = await api.webSearch(applied ? `${applied} United Nations` : 'United Nations')
+      setNews(list)
+    } catch (e) {
+      setNewsErr(String((e as Error).message))
+    } finally {
+      setNewsLoading(false)
+    }
+  }
+
+  const catCounts = useMemo(() => {
+    const m: Record<string, number> = {}
+    ALL_SOURCES.forEach((s) => { m[s.cat] = (m[s.cat] || 0) + 1 })
+    return m
+  }, [])
+
+  const shownAll = useMemo(
+    () => (cat === 'all' ? ALL_SOURCES : ALL_SOURCES.filter((s) => s.cat === cat)),
+    [cat],
+  )
+
+  const google = applied ? googleSiteLinks(applied) : []
+
+  return (
+    <div className="mx-auto max-w-7xl px-4 md:px-6 py-10 md:py-14">
+      <div className="flex items-center gap-2 text-un-700 text-sm font-medium mb-2">
+        <Globe size={15} /> 官方信源研究室 · {ALL_SOURCES.length} 信源 / {ALL_COMMITTEES.length} 委员会
+      </div>
+      <h1 className="text-3xl md:text-4xl font-black text-slate-900 tracking-tight">议题材料检索</h1>
+      <p className="mt-3 text-slate-500 max-w-2xl leading-7">
+        输入议题（建议英文），AI 先精选最贴切的权威信源，并可实时联网抓取最新网页；也可在「委员会大全」浏览 7 层 {ALL_COMMITTEES.length} 个机构。
+      </p>
+
+      <div className="mt-6 inline-flex rounded-xl border border-slate-200 bg-white p-1">
+        <button onClick={() => setView('sources')} className={`flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold transition ${view === 'sources' ? 'bg-un-600 text-white' : 'text-slate-600'}`}>
+          <LayoutGrid size={15} /> 信源检索
+        </button>
+        <button onClick={() => setView('committees')} className={`flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold transition ${view === 'committees' ? 'bg-un-600 text-white' : 'text-slate-600'}`}>
+          <Layers size={15} /> 委员会大全
+        </button>
+      </div>
+
+      {view === 'sources' && (
+        <>
+          <div className="mt-5 card p-4 md:p-5">
+            <div className="flex flex-col md:flex-row gap-3">
+              <div className="relative flex-1">
+                <Search size={17} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input className="input !pl-10 !py-3" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && runSearch()} placeholder="例如：climate change and international security" />
+              </div>
+              <button className="btn-primary !py-3" disabled={!query.trim()} onClick={() => runSearch()}>智能检索</button>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {HOT_TOPICS.slice(0, 8).map((t) => (
+                <button key={t.en} className="chip" onClick={() => runSearch(t.en)}>{t.zh}</button>
+              ))}
+            </div>
+          </div>
+
+          {applied && smart && (
+            <section ref={resultRef} className="mt-8 scroll-mt-20 animate-fade-in">
+              {/* ① AI 主题智能推荐信源 */}
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-un-600 px-3 py-1 text-xs font-bold text-white">
+                  <Sparkles size={12} /> AI 智能精选
+                </span>
+                <span className="text-sm text-slate-500">
+                  议题归类：<b className="text-slate-700">{CATEGORY_LABEL[smart.category]}</b> · 共 {smart.sources.length} 个最贴切信源
+                </span>
+              </div>
+              <h2 className="text-lg font-bold text-slate-900 mb-4">「{applied}」· 最贴切的检索网页</h2>
+              <div className="grid gap-3.5 md:grid-cols-2 lg:grid-cols-3">
+                {smart.sources.map((s, k) => (
+                  <a key={s.id} href={s.search(applied)} target="_blank" className="card group relative p-5 transition hover:-translate-y-0.5 hover:shadow-md hover:border-un-200">
+                    {k < 3 && <span className="absolute right-3 top-3 rounded bg-gold-50 px-1.5 py-0.5 text-[10px] font-bold text-gold-700">高相关</span>}
+                    <div className="font-bold text-[14.5px] text-slate-900 pr-14">{s.name}</div>
+                    {s.en && <div className="text-[11px] text-slate-400">{s.en}</div>}
+                    <p className="mt-2 text-xs text-slate-500 leading-5">{s.desc}</p>
+                    <div className="mt-3 flex items-center gap-1 text-[11px] font-semibold text-un-700 opacity-0 transition group-hover:opacity-100">
+                      打开检索结果 <ExternalLink size={12} />
+                    </div>
+                  </a>
+                ))}
+              </div>
+
+              {/* ② 实时联网结果 */}
+              <div className="mt-8 card p-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h3 className="font-bold text-slate-900 flex items-center gap-2"><Wifi size={17} className="text-un-600" /> 实时网络精选</h3>
+                  <button className="btn-primary !py-2" onClick={loadLive} disabled={liveLoading}>
+                    {liveLoading ? <Loader2 size={14} className="animate-spin" /> : <Wifi size={14} />}
+                    {liveLoading ? '联网检索中…' : live ? '重新联网检索' : '点击联网检索最新网页'}
+                  </button>
+                </div>
+                <p className="mt-1.5 text-xs text-slate-400">由后端实时检索 UN News 与全网，返回与「{applied}」最相关的网页链接。</p>
+                {liveErr && (
+                  <div className="mt-3 flex items-center gap-2 rounded-lg bg-gold-50 px-3 py-2 text-xs text-gold-700">
+                    <AlertCircle size={14} /> {liveErr}
+                  </div>
+                )}
+                {live && (
+                  <div className="mt-4 divide-y divide-slate-100">
+                    {live.map((r) => (
+                      <a key={r.url} href={r.url} target="_blank" className="flex items-start gap-3 py-3 hover:bg-slate-50/60 px-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-semibold text-slate-900">{r.title}</div>
+                          {r.snippet && <p className="mt-1 text-xs text-slate-500 leading-5 line-clamp-2">{r.snippet}</p>}
+                          <div className="mt-1 text-[11px] text-un-600/70 truncate">{r.url}</div>
+                        </div>
+                        <ExternalLink size={14} className="mt-1 shrink-0 text-slate-300" />
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* ③ 高阶检索语法 */}
+              <div className="mt-6 card p-5">
+                <h3 className="font-bold text-slate-900">🔎 高阶检索语法</h3>
+                <div className="mt-3 grid gap-2.5 md:grid-cols-2 lg:grid-cols-4">
+                  {google.map((g) => (
+                    <a key={g.label} href={g.url} target="_blank" className="btn-ghost justify-between !py-3">
+                      {g.label} <ExternalLink size={14} />
+                    </a>
+                  ))}
+                </div>
+              </div>
+
+              {/* ④ 全部信源（折叠） */}
+              <div className="mt-6">
+                <button
+                  onClick={() => setShowAll(!showAll)}
+                  className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-5 py-4 hover:bg-slate-50"
+                >
+                  <span className="font-bold text-slate-900">全部信源（{ALL_SOURCES.length} 个，按类别筛选）</span>
+                  <span className="text-sm text-slate-400">{showAll ? '收起 ▲' : '展开 ▼'}</span>
+                </button>
+                {showAll && (
+                  <div className="mt-4">
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      <button onClick={() => setCat('all')} className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${cat === 'all' ? 'bg-slate-900 text-white' : 'bg-white border border-slate-200 text-slate-600'}`}>
+                        全部 ({ALL_SOURCES.length})
+                      </button>
+                      {Object.entries(SOURCE_CATS).map(([k, label]) => (
+                        <button key={k} onClick={() => setCat(k)} className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${cat === k ? 'bg-un-600 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:border-un-300'}`}>
+                          {label} ({catCounts[k] || 0})
+                        </button>
+                      ))}
+                    </div>
+                    <div className="grid gap-3.5 md:grid-cols-2 lg:grid-cols-3">
+                      {shownAll.map((s) => (
+                        <a key={s.id} href={s.search(applied)} target="_blank" className="card group p-5 transition hover:-translate-y-0.5 hover:shadow-md hover:border-un-200">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="font-bold text-[14.5px] text-slate-900">{s.name}</div>
+                            <ExternalLink size={14} className="text-slate-300 group-hover:text-un-600 shrink-0" />
+                          </div>
+                          {s.en && <div className="text-[11px] text-slate-400">{s.en}</div>}
+                          <p className="mt-2 text-xs text-slate-500 leading-5">{s.desc}</p>
+                          {s.kind === 'teaching' && <span className="mt-2 inline-block rounded bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold text-violet-600">教学/比赛</span>}
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+        </>
+      )}
+
+      {view === 'committees' && (
+        <section className="mt-6 space-y-3 animate-fade-in">
+          {[1, 2, 3, 4, 5, 6, 7].map((layer) => {
+            const list = ALL_COMMITTEES.filter((c) => c.layer === layer)
+            const open = openLayers[layer]
+            return (
+              <div key={layer} className="card overflow-hidden">
+                <button
+                  onClick={() => setOpenLayers({ ...openLayers, [layer]: !open })}
+                  className="flex w-full items-center justify-between px-5 py-4 hover:bg-slate-50"
+                >
+                  <span className="font-bold text-slate-900">{LAYER_NAMES[layer]}</span>
+                  <span className="flex items-center gap-3 text-sm text-slate-400">
+                    {list.length} 个
+                    {open ? '−' : '+'}
+                  </span>
+                </button>
+                {open && (
+                  <div className="grid gap-px bg-slate-100 md:grid-cols-2">
+                    {list.map((c) => (
+                      <a key={c.id} href={c.url} target="_blank" className="flex items-start gap-3 bg-white px-5 py-3.5 hover:bg-un-50/50">
+                        <span className="mt-0.5 shrink-0 rounded bg-un-50 px-1.5 py-0.5 text-[10px] font-bold text-un-700">{c.abbr}</span>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-semibold text-slate-800">{c.name}</div>
+                          <div className="text-[11px] text-slate-400 truncate">{c.en} · {c.desc}</div>
+                        </div>
+                        {!c.real && <span className="shrink-0 rounded bg-gold-50 px-1.5 py-0.5 text-[10px] font-semibold text-gold-700">MUN形式</span>}
+                        <ExternalLink size={13} className="mt-1 shrink-0 text-slate-300" />
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </section>
+      )}
+
+      <section className="mt-12">
+        <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2 mb-4">
+          <Newspaper size={18} className="text-un-600" />联合国新闻动态
+        </h2>
+        <div className="card divide-y divide-slate-100">
+          {!news && !newsLoading && !newsErr && (
+            <div className="px-6 py-12 text-center">
+              <Newspaper size={24} className="mx-auto text-un-300 mb-3" />
+              <p className="text-sm text-slate-600">点击按钮，通过后端实时获取与议题相关的最新联合国新闻。</p>
+              <button className="btn-primary mt-4" onClick={loadNews}>
+                <Newspaper size={15} /> 获取最新动态
+              </button>
+            </div>
+          )}
+          {newsLoading && <div className="flex items-center justify-center gap-2 py-12 text-sm text-slate-400"><Loader2 size={16} className="animate-spin" /> 正在联网获取…</div>}
+          {newsErr && !newsLoading && (
+            <div className="px-6 py-10 text-center">
+              <AlertCircle size={22} className="mx-auto text-gold-500 mb-2" />
+              <p className="text-sm text-slate-600">{newsErr}</p>
+              <button className="btn-primary mt-4" onClick={loadNews}>重试</button>
+            </div>
+          )}
+          {news && !newsLoading && (
+            <>
+              {news.map((it) => (
+                <a key={it.url} href={it.url} target="_blank" className="flex items-start gap-4 px-5 py-4 hover:bg-slate-50">
+                  <div className="flex-1 min-w-0">
+                    <h4 className="text-sm font-semibold text-slate-900">{it.title}</h4>
+                    {it.snippet && <p className="mt-1 text-xs text-slate-500 leading-5 line-clamp-2">{it.snippet}</p>}
+                  </div>
+                  <ExternalLink size={14} className="mt-1 shrink-0 text-slate-300" />
+                </a>
+              ))}
+              <div className="px-5 py-3 text-right">
+                <button className="text-xs font-semibold text-un-700 hover:underline inline-flex items-center gap-1" onClick={loadNews}>
+                  刷新为最新 <Newspaper size={12} />
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </section>
+    </div>
+  )
+}
