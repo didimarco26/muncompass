@@ -58,10 +58,15 @@ export const api = {
     maxPoints: number,
     ctx: AICtx,
     occasion: string,
+    position?: string,
+    callToAction?: string,
   ) =>
     call<{ points: { claim: string; evidence: string }[] }>('speech_points', {
-      direction, maxPoints, ctx, occasion,
+      direction, maxPoints, ctx, occasion, position, callToAction,
     }),
+
+  speechKeynote: (field: 'position' | 'cta', ctx: AICtx, occasion: string) =>
+    call<{ text: string }>('speech_keynote', { field, ctx, occasion }),
 }
 
 export interface ResolutionJSON {

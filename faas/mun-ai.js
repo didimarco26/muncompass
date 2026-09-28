@@ -294,7 +294,11 @@ Rules:
 - Order points as a persuasive arc: problem/scale -> why it matters to the country -> solution/action.
 - "evidence" names 1-2 REAL, verifiable authoritative sources (UN bodies, treaty regimes, official reports/data) the delegate should consult; written like "IPCC Sixth Assessment Report; WMO data". NEVER fabricate report titles, document symbols or numbers; if unsure, name the institution and the dataset type.
 - Do not include commentary outside the JSON.`
-  const user = `${ctxLine(p.ctx)}\nOccasion: ${p.occasion || 'GSL'}.\n\nDelegate's desired speech direction:\n${direction}`
+  const keynote = [
+    p.position ? `Delegate's core position: ${p.position}` : '',
+    p.callToAction ? `Delegate's intended call to action: ${p.callToAction}` : '',
+  ].filter(Boolean).join('\n')
+  const user = `${ctxLine(p.ctx)}\nOccasion: ${p.occasion || 'GSL'}.${keynote ? `\n${keynote}` : ''}\n\nDelegate's desired speech direction:\n${direction}`
   const raw = await callAI(sys, user, 0.6)
   try {
     const json = JSON.parse(raw.match(/\{[\s\S]*\}/)[0])
@@ -311,6 +315,29 @@ Rules:
   } catch {
     throw new Error('AI 返回解析失败，请重试')
   }
+}
+
+// AI 生成核心立场 / 结尾号召（先定基调）
+async function stageSpeechKeynote(p) {
+  const field = p.field === 'cta' ? 'cta' : 'position'
+  const cfg = field === 'position'
+    ? {
+      what: 'the delegate’s CORE POSITION in one sentence — the central claim the whole speech will defend',
+      rule: 'state a principled stance on what should happen or what is owed (e.g. a group deserves a binding legal protection status); it must be assertive, specific to the topic, and aligned with the assigned country’s real policy, alliances and national interests; no action plan, no statistics',
+    }
+    : {
+      what: 'the speech’s CALL TO ACTION in one sentence — the concrete step the delegate urges the committee to take',
+      rule: 'name ONE specific, feasible action for this committee and occasion (mechanism to create, fund to establish, behaviour to condemn, process to launch); keep it deliverable within the committee’s mandate; avoid vague phrases like "work together"',
+    }
+  const sys = `You are a senior Model United Nations speech coach. Write ${cfg.what}.
+Rules:
+- ${cfg.rule}.
+- Output ONE sentence only, in formal English, WITHOUT a trailing period (the app adds punctuation) and WITHOUT quotes, numbering, commentary or translations.
+- NEVER fabricate treaties, resolutions, document symbols, statistics or proper names; mark nothing — a stance/CTA needs no citations.`
+  const user = `${ctxLine(p.ctx)}\nOccasion: ${p.occasion || 'GSL'}.`
+  const text = (await callAI(sys, user, 0.7)).trim().replace(/\.\s*$/, '')
+  if (!text) throw new Error('AI 未返回内容')
+  return { ok: true, text }
 }
 
 // ---------------- handler ----------------
@@ -334,6 +361,7 @@ async function handler(event) {
       case 'notes_to_resolution': return respond(200, await stageNotesToResolution(p))
       case 'refine_resolution': return respond(200, await stageRefineResolution(p))
       case 'speech_points': return respond(200, await stageSpeechPoints(p))
+      case 'speech_keynote': return respond(200, await stageSpeechKeynote(p))
       default: return respond(400, { ok: false, error: 'unknown stage' })
     }
   } catch (e) {

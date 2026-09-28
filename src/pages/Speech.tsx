@@ -59,6 +59,8 @@ export default function SpeechPage() {
         durCfg.maxPoints,
         { committee: brief.committee, country: brief.country, topic: brief.topic },
         brief.occasion,
+        position,
+        callToAction,
       )
       setAiPts(r.points)
       setDirOpen(false)
@@ -66,6 +68,30 @@ export default function SpeechPage() {
       setPtsErr(String((e as Error).message))
     } finally {
       setPtsLoading(false)
+    }
+  }
+
+  // AI 生成核心立场 / 结尾号召
+  const [keynoteBusy, setKeynoteBusy] = useState<'position' | 'cta' | ''>('')
+  const [keynoteErr, setKeynoteErr] = useState('')
+  const genKeynote = async (field: 'position' | 'cta') => {
+    if (keynoteBusy) return
+    if (!brief.topic.trim()) { setKeynoteErr('请先在上方填写议题'); return }
+    if (!brief.country.trim()) { setKeynoteErr('请先在上方填写代表国家'); return }
+    setKeynoteBusy(field)
+    setKeynoteErr('')
+    try {
+      const r = await api.speechKeynote(
+        field,
+        { committee: brief.committee, country: brief.country, topic: brief.topic },
+        brief.occasion,
+      )
+      if (field === 'position') setPosition(r.text)
+      else setCallToAction(r.text)
+    } catch (e) {
+      setKeynoteErr(String((e as Error).message))
+    } finally {
+      setKeynoteBusy('')
     }
   }
 
@@ -158,8 +184,60 @@ export default function SpeechPage() {
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-5">
-        {/* ===== AI推荐 + 已选论点 ===== */}
+        {/* ===== 定基调 + AI推荐 + 已选论点 ===== */}
         <div className="lg:col-span-3 space-y-5">
+          {/* 定基调：核心立场 / 结尾号召 */}
+          <div className="card p-5">
+            <h2 className="font-bold text-slate-900 flex items-center gap-2 mb-1">
+              <Mic size={16} className="text-rose-500" /> 定基调：核心立场与结尾号召
+            </h2>
+            <p className="text-xs text-slate-400 mb-4">先定立场与号召，再据此挑选下方论点的具体方向。</p>
+
+            <div className="space-y-4">
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <label className="label !mb-0">核心立场（一句话）</label>
+                  <button
+                    className="btn-ghost !py-1 !text-xs"
+                    disabled={keynoteBusy !== ''}
+                    onClick={() => genKeynote('position')}>
+                    {keynoteBusy === 'position'
+                      ? <span className="flex items-center gap-1"><Loader2 size={12} className="animate-spin" /> 生成中…</span>
+                      : <span className="flex items-center gap-1"><Sparkles size={12} /> AI生成</span>}
+                  </button>
+                </div>
+                <input
+                  className="input"
+                  value={position}
+                  onChange={(e) => setPosition(e.target.value)}
+                  placeholder="climate displaced persons deserve a binding legal protection status"
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <label className="label !mb-0">结尾号召（呼吁委员会做什么）</label>
+                  <button
+                    className="btn-ghost !py-1 !text-xs"
+                    disabled={keynoteBusy !== ''}
+                    onClick={() => genKeynote('cta')}>
+                    {keynoteBusy === 'cta'
+                      ? <span className="flex items-center gap-1"><Loader2 size={12} className="animate-spin" /> 生成中…</span>
+                      : <span className="flex items-center gap-1"><Sparkles size={12} /> AI生成</span>}
+                  </button>
+                </div>
+                <input
+                  className="input"
+                  value={callToAction}
+                  onChange={(e) => setCallToAction(e.target.value)}
+                  placeholder="establish a dedicated response fund this session"
+                />
+              </div>
+
+              {keynoteErr && <p className="text-xs text-rose-500">{keynoteErr}</p>}
+            </div>
+          </div>
+
           <div className="card p-5">
             <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
               <h2 className="font-bold text-slate-900 flex items-center gap-2">
@@ -253,17 +331,7 @@ export default function SpeechPage() {
             </div>
           )}
 
-          <div className="card p-5 space-y-4">
-            <div>
-              <label className="label">核心立场（一句话）</label>
-              <input className="input" value={position} onChange={(e) => setPosition(e.target.value)}
-                placeholder="climate displaced persons deserve a binding legal protection status" />
-            </div>
-            <div>
-              <label className="label">结尾号召（呼吁委员会做什么）</label>
-              <input className="input" value={callToAction} onChange={(e) => setCallToAction(e.target.value)}
-                placeholder="establish a dedicated response fund this session" />
-            </div>
+          <div className="card p-5">
             <button
               className="btn-primary w-full !py-3"
               disabled={!brief.country.trim() || points.length === 0}
@@ -272,6 +340,11 @@ export default function SpeechPage() {
               }>
               <Wand2 size={16} /> 生成讲稿
             </button>
+            {(!brief.country.trim() || points.length === 0) && (
+              <p className="mt-2 text-center text-xs text-slate-400">
+                填好代表国家并至少采用 1 条论点后可生成
+              </p>
+            )}
           </div>
         </div>
 
