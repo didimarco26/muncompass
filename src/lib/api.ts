@@ -52,6 +52,16 @@ export const api = {
 
   refineResolution: (current: string, instruction: string, ctx: AICtx) =>
     call<{ data: ResolutionJSON }>('refine_resolution', { current, instruction, ctx }),
+
+  speechPoints: (
+    direction: string,
+    maxPoints: number,
+    ctx: AICtx,
+    occasion: string,
+  ) =>
+    call<{ points: { claim: string; evidence: string }[] }>('speech_points', {
+      direction, maxPoints, ctx, occasion,
+    }),
 }
 
 export interface ResolutionJSON {

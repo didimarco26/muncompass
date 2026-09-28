@@ -281,6 +281,38 @@ Return STRICT JSON only (no markdown fences) with this shape:
   }
 }
 
+// 按使用者自定义的发言方向，AI 重新生成讲稿论点
+async function stageSpeechPoints(p) {
+  const direction = String(p.direction || '').trim()
+  if (direction.length < 4) throw new Error('请先填写你想讲的方向')
+  const maxPoints = Math.min(Math.max(Number(p.maxPoints) || 3, 2), 6)
+  const sys = `You are a senior Model UN speech coach. Given the delegate's context and the SPEECH DIRECTION the delegate wants to take, produce a set of speech talking points.
+Return STRICT JSON only, no markdown fences, with this shape:
+{"points":[{"claim":"...","evidence":"..."}]}
+Rules:
+- Produce exactly ${maxPoints} points; every "claim" is ONE assertive sentence in formal English WITHOUT a trailing period (it will be punctuated by the app), directly developing the delegate's requested direction while fitting the committee's mandate and the assigned country's real policy and interests.
+- Order points as a persuasive arc: problem/scale -> why it matters to the country -> solution/action.
+- "evidence" names 1-2 REAL, verifiable authoritative sources (UN bodies, treaty regimes, official reports/data) the delegate should consult; written like "IPCC Sixth Assessment Report; WMO data". NEVER fabricate report titles, document symbols or numbers; if unsure, name the institution and the dataset type.
+- Do not include commentary outside the JSON.`
+  const user = `${ctxLine(p.ctx)}\nOccasion: ${p.occasion || 'GSL'}.\n\nDelegate's desired speech direction:\n${direction}`
+  const raw = await callAI(sys, user, 0.6)
+  try {
+    const json = JSON.parse(raw.match(/\{[\s\S]*\}/)[0])
+    if (!Array.isArray(json.points) || !json.points.length) throw new Error('x')
+    const points = json.points
+      .filter((x) => x && typeof x.claim === 'string')
+      .slice(0, maxPoints)
+      .map((x) => ({
+        claim: String(x.claim).trim().replace(/\.\s*$/, ''),
+        evidence: String(x.evidence || '').trim() || '相关联合国官方文件与数据（请核实）',
+      }))
+    if (!points.length) throw new Error('x')
+    return { ok: true, points }
+  } catch {
+    throw new Error('AI 返回解析失败，请重试')
+  }
+}
+
 // ---------------- handler ----------------
 async function handler(event) {
   try {
@@ -301,6 +333,7 @@ async function handler(event) {
       case 'content_direction': return respond(200, await stageContentDirection(p))
       case 'notes_to_resolution': return respond(200, await stageNotesToResolution(p))
       case 'refine_resolution': return respond(200, await stageRefineResolution(p))
+      case 'speech_points': return respond(200, await stageSpeechPoints(p))
       default: return respond(400, { ok: false, error: 'unknown stage' })
     }
   } catch (e) {

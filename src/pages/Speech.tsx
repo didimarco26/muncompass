@@ -1,12 +1,14 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Mic, Wand2, Clock, Sparkles, Plus, Trash2, Check, MessageSquareText,
+  RefreshCw, Loader2,
 } from 'lucide-react'
 import { genSpeechV2, countWords, type SpeechV2Input } from '../lib/gen'
 import {
   categorizeTopic, recommendPoints, CATEGORY_LABEL,
   DURATIONS, TONES, type PointSuggestion,
 } from '../lib/recommend'
+import { api } from '../lib/api'
 import { CopyButton, DownloadButton } from '../components/IOButtons'
 import { ALL_COMMITTEES } from '../data/committees2'
 
@@ -33,9 +35,39 @@ export default function SpeechPage() {
     () => categorizeTopic(brief.topic, brief.committee),
     [brief.topic, brief.committee],
   )
-  const suggestions = useMemo(() => recommendPoints(cat), [cat])
+  const baseSuggestions = useMemo(() => recommendPoints(cat), [cat])
+  const [aiPts, setAiPts] = useState<PointSuggestion[] | null>(null)
+  const [dirOpen, setDirOpen] = useState(false)
+  const [direction, setDirection] = useState('')
+  const [ptsLoading, setPtsLoading] = useState(false)
+  const [ptsErr, setPtsErr] = useState('')
+  // 议题/委员会变化后，AI 定制论点失效，回到本地推荐
+  useEffect(() => setAiPts(null), [brief.topic, brief.committee])
+  const suggestions = aiPts ?? baseSuggestions
   const durCfg = DURATIONS.find((d) => d.id === duration)!
   const needSub = OCCASIONS.find((o) => o.id === brief.occasion)?.needSub
+
+  const genByDirection = async () => {
+    if (ptsLoading) return
+    if (!direction.trim()) { setPtsErr('请先填写你想讲的方向'); return }
+    if (!brief.topic.trim()) { setPtsErr('请先在上方填写议题'); return }
+    setPtsLoading(true)
+    setPtsErr('')
+    try {
+      const r = await api.speechPoints(
+        direction,
+        durCfg.maxPoints,
+        { committee: brief.committee, country: brief.country, topic: brief.topic },
+        brief.occasion,
+      )
+      setAiPts(r.points)
+      setDirOpen(false)
+    } catch (e) {
+      setPtsErr(String((e as Error).message))
+    } finally {
+      setPtsLoading(false)
+    }
+  }
 
   const adopt = (s: PointSuggestion) => {
     if (points.length >= durCfg.maxPoints) return
@@ -133,13 +165,51 @@ export default function SpeechPage() {
               <h2 className="font-bold text-slate-900 flex items-center gap-2">
                 <Sparkles size={16} className="text-gold-500" /> AI 论点推荐
               </h2>
-              <button className="btn-ghost !py-1.5 !text-xs" onClick={adoptAll} disabled={points.length >= durCfg.maxPoints}>
-                全部采用
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  className="btn-ghost !py-1.5 !text-xs"
+                  onClick={() => { setDirOpen(!dirOpen); setPtsErr('') }}>
+                  <RefreshCw size={12} /> 优化更新
+                </button>
+                <button className="btn-ghost !py-1.5 !text-xs" onClick={adoptAll} disabled={points.length >= durCfg.maxPoints}>
+                  全部采用
+                </button>
+              </div>
             </div>
             <p className="text-xs text-slate-400 mb-4">
-              识别为「{CATEGORY_LABEL[cat]}」· 推荐 {suggestions.length} 条，当前时长最多 {durCfg.maxPoints} 条
+              {aiPts
+                ? `已按你的方向定制 · ${suggestions.length} 条，当前时长最多 ${durCfg.maxPoints} 条`
+                : `识别为「${CATEGORY_LABEL[cat]}」· 推荐 ${suggestions.length} 条，当前时长最多 ${durCfg.maxPoints} 条`}
             </p>
+
+            {dirOpen && (
+              <div className="mb-4 rounded-xl border border-gold-200 bg-gold-50/50 p-3.5">
+                <p className="text-xs font-semibold text-slate-700 mb-2">
+                  输入你想讲的方向，AI 将结合委员会、代表国家与议题重新生成论点
+                </p>
+                <textarea
+                  className="input min-h-[68px] resize-y leading-6"
+                  value={direction}
+                  onChange={(e) => setDirection(e.target.value)}
+                  placeholder="例如：强调我国作为低地国家受海平面上升的生存威胁，聚焦呼吁建立强制性气候移民安置基金"
+                />
+                {ptsErr && <p className="mt-1.5 text-xs text-rose-500">{ptsErr}</p>}
+                <div className="mt-2.5 flex items-center gap-2">
+                  <button
+                    className="btn-primary !py-2 !text-xs"
+                    disabled={ptsLoading}
+                    onClick={genByDirection}>
+                    {ptsLoading
+                      ? <span className="flex items-center gap-1.5"><Loader2 size={13} className="animate-spin" /> 生成中…</span>
+                      : <span className="flex items-center gap-1.5"><Sparkles size={13} /> AI 生成论点</span>}
+                  </button>
+                  <button className="btn-ghost !py-2 !text-xs" onClick={() => setDirOpen(false)}>
+                    取消
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="space-y-2.5">
               {suggestions.map((s, k) => {
                 const adopted = points.some((p) => p.claim === s.claim)
