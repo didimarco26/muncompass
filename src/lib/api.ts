@@ -67,6 +67,26 @@ export const api = {
 
   speechKeynote: (field: 'position' | 'cta', ctx: AICtx, occasion: string) =>
     call<{ text: string }>('speech_keynote', { field, ctx, occasion }),
+
+  researchReport: (input: {
+    country: string; topic: string; committee?: string; conference?: string; focus?: string
+  }) =>
+    call<{ report: ResearchReport; sources: BriefSource[] }>('research_report', input),
+}
+
+export interface BriefSource {
+  title: string
+  url: string
+  snippet: string
+}
+
+export interface ResearchReport {
+  thesis: string
+  countryContext: string
+  arguments: { claim: string; evidence: string; sources: number[] }[]
+  counterarguments: { view: string; holders: string; response: string; sources: number[] }[]
+  resultsChain: { action: string; outcome: string; impact: string; sources: number[] }[]
+  gaps: string[]
 }
 
 export interface ResolutionJSON {

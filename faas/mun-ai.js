@@ -19,7 +19,7 @@ async function readBody(e) {
 }
 
 const AI_MODEL_TEMP = 0.6
-async function callAI(system, user, temperature) {
+async function callAI(system, user, temperature, maxTokens) {
   const runtime = (typeof magic !== 'undefined' && magic)
     || (typeof l !== 'undefined' && l)
     || (typeof lark !== 'undefined' && lark)
@@ -27,6 +27,7 @@ async function callAI(system, user, temperature) {
   const r = await runtime.ai({
     system, user,
     temperature: temperature ?? AI_MODEL_TEMP,
+    ...(maxTokens ? { max_tokens: maxTokens } : {}),
     thinking: { type: 'disabled' },
     reasoning_effort: 'minimal',
   })
@@ -317,6 +318,127 @@ Rules:
   }
 }
 
+// 升级版检索：按代表备料优先级多维实时检索，再综合为 thesis 式研究报告
+async function stageResearchReport(p) {
+  const country = String(p.country || '').trim()
+  const topic = String(p.topic || '').trim()
+  const committee = String(p.committee || '').trim()
+  const conference = String(p.conference || '').trim()
+  const focus = String(p.focus || '').trim()
+  if (!country) throw new Error('请填写代表国家（最高优先级检索维度）')
+  if (!topic) throw new Error('请填写议题')
+
+  // 优先级检索词：P1 国家立场（投票记录/官方表态）→ P2 议题事实与法律框架 → P3 委员会 → 辩证争议
+  const queries = [
+    `${country} position ${topic} United Nations vote`,
+    `${country} foreign ministry statement ${topic}`,
+    `${topic} United Nations resolution treaty framework`,
+    `${topic} UN agency data statistics report`,
+    `${topic} disagreement developed developing countries controversy`,
+  ]
+  if (committee) queries.push(`${committee} mandate ${topic} United Nations`)
+
+  // 并发跑全部检索（每路 Bing + UN News 本地过滤）
+  const batches = await Promise.all(queries.map(async (q) => {
+    try {
+      const [bing, news] = await Promise.all([webSearch(q), unNewsSearch(q)])
+      return [...news.filter((x) => x.score > 0).slice(0, 2), ...bing.slice(0, 6)]
+    } catch { return [] }
+  }))
+
+  const poolMap = new Map()
+  batches.flat().forEach((s) => {
+    if (!s.url || poolMap.has(s.url)) return
+    poolMap.set(s.url, { title: s.title, url: s.url, snippet: s.snippet || '' })
+  })
+  const pool = [...poolMap.values()]
+    .map((x) => ({ ...x, snippet: (x.snippet || '').slice(0, 150) }))
+    .slice(0, 16)
+  if (pool.length < 4) throw new Error('实时检索结果过少，请稍后重试或调整议题措辞')
+
+  // 分治：长 schema 会让模型放弃 JSON 改输出 Markdown，故拆成 5 个小 JSON 并发生成
+  const askJSON = async (tail, userPart, tries = 2) => {
+    const sys = `You are a Model UN research assistant. ${tail} Output JSON only, no markdown, no commentary.`
+    let lastErr
+    for (let i = 0; i < tries; i++) {
+      try {
+        const raw = await callAI(sys, userPart, 0.5, 2600)
+        return JSON.parse(raw.match(/\{[\s\S]*\}/)[0])
+      } catch (e) { lastErr = e }
+    }
+    throw lastErr
+  }
+  const SRC = 'Use ONLY the given pool; source indices are integers from the pool that truly support the point; never fabricate statistics, resolution symbols, treaties or quotes.'
+  const header = ctxLine({ committee, conference, country, topic }) + (focus ? `\nDelegate focus: ${focus}` : '')
+  const poolText = pool.map((s, i) => `[${i}] ${s.title} | ${s.snippet}`).join('\n')
+  const baseUser = `${header}\n\nSource pool:\n${poolText}`
+
+  const tasks = [
+    askJSON(
+      'Write {"thesis":"one assertive paragraph: the country central argument, the impact it seeks and why","countryContext":"2-3 sentences: national interests, bloc memberships supported by the pool, policy stance"}.',
+      baseUser,
+    ),
+    askJSON(
+      `Write exactly 3 items: {"arguments":[{"claim":"one assertive sentence, no trailing period","evidence":"2-3 sentences of factual or legal support from the pool","sources":[indices]}]}. ${SRC}`,
+      baseUser,
+    ),
+    askJSON(
+      `Write exactly 2 REAL opposing positions, never straw men: {"counterarguments":[{"view":"opposing claim as one sentence, no trailing period","holders":"states or blocs holding it if the pool shows, otherwise empty string","response":"the delegate rebuttal grounded in the pool","sources":[indices]}]}. ${SRC}`,
+      baseUser,
+    ),
+    askJSON(
+      `Apply a Results-Based Management logic model (output -> outcome -> impact). Write 2 steps: {"resultsChain":[{"action":"concrete committee output: mechanism, fund or process, one sentence","outcome":"medium-term change it produces, one sentence","impact":"long-term impact on people, one sentence","sources":[indices]}]}. ${SRC}`,
+      baseUser,
+    ),
+    askJSON(
+      'Write {"gaps":[4 items]}: each one sentence naming a specific fact, figure or source type the pool lacks and the delegate should verify before the conference.',
+      baseUser,
+    ),
+  ]
+  const [head, args, counters, chain, gapsJson] = await Promise.all(tasks)
+
+  const validIdx = (a) => Array.isArray(a) && a.every((i) => Number.isInteger(i) && i >= 0 && i < pool.length)
+  const clean = (x) => String(x || '').trim()
+  if (!clean(head?.thesis)) throw new Error('核心论点生成失败，请重试')
+
+  const report = {
+    thesis: clean(head.thesis),
+    countryContext: clean(head.countryContext),
+    arguments: Array.isArray(args?.arguments)
+      ? args.arguments
+        .filter((x) => x && clean(x.claim))
+        .slice(0, 3)
+        .map((x) => ({ claim: clean(x.claim).replace(/\.\s*$/, ''), evidence: clean(x.evidence), sources: validIdx(x.sources) ? x.sources : [] }))
+      : [],
+    counterarguments: Array.isArray(counters?.counterarguments)
+      ? counters.counterarguments
+        .filter((x) => x && clean(x.view))
+        .slice(0, 2)
+        .map((x) => ({
+          view: clean(x.view).replace(/\.\s*$/, ''), holders: clean(x.holders), response: clean(x.response),
+          sources: validIdx(x.sources) ? x.sources : [],
+        }))
+      : [],
+    resultsChain: Array.isArray(chain?.resultsChain)
+      ? chain.resultsChain
+        .filter((x) => x && clean(x.action))
+        .slice(0, 2)
+        .map((x) => ({
+          action: clean(x.action).replace(/\.\s*$/, ''),
+          outcome: clean(x.outcome).replace(/\.\s*$/, ''),
+          impact: clean(x.impact).replace(/\.\s*$/, ''),
+          sources: validIdx(x.sources) ? x.sources : [],
+        }))
+      : [],
+    gaps: Array.isArray(gapsJson?.gaps)
+      ? gapsJson.gaps.map(clean).filter(Boolean).slice(0, 4)
+      : [],
+  }
+  if (!report.arguments.length) throw new Error('论点生成失败，请重试')
+
+  return { ok: true, report, sources: pool }
+}
+
 // AI 生成核心立场 / 结尾号召（先定基调）
 async function stageSpeechKeynote(p) {
   const field = p.field === 'cta' ? 'cta' : 'position'
@@ -340,6 +462,12 @@ Rules:
   return { ok: true, text }
 }
 
+// AI 探针：直接回传模型原始输出，用于诊断
+async function stageAiProbe(p) {
+  const text = await callAI(p.sys || 'You are helpful.', p.user || 'Say OK.', 0.4, 4096)
+  return { ok: true, text }
+}
+
 // ---------------- handler ----------------
 async function handler(event) {
   try {
@@ -360,8 +488,10 @@ async function handler(event) {
       case 'content_direction': return respond(200, await stageContentDirection(p))
       case 'notes_to_resolution': return respond(200, await stageNotesToResolution(p))
       case 'refine_resolution': return respond(200, await stageRefineResolution(p))
+      case 'research_report': return respond(200, await stageResearchReport(p))
       case 'speech_points': return respond(200, await stageSpeechPoints(p))
       case 'speech_keynote': return respond(200, await stageSpeechKeynote(p))
+      case 'ai_probe': return respond(200, await stageAiProbe(p))
       default: return respond(400, { ok: false, error: 'unknown stage' })
     }
   } catch (e) {
