@@ -357,45 +357,56 @@ async function stageResearchReport(p) {
   if (pool.length < 4) throw new Error('实时检索结果过少，请稍后重试或调整议题措辞')
 
   // 分治：长 schema 会让模型放弃 JSON 改输出 Markdown，故拆成 5 个小 JSON 并发生成
-  const askJSON = async (tail, userPart, tries = 2) => {
+  const askJSON = async (tail, userPart, tries = 3) => {
     const sys = `You are a Model UN research assistant. ${tail} Output JSON only, no markdown, no commentary.`
     let lastErr
     for (let i = 0; i < tries; i++) {
       try {
-        const raw = await callAI(sys, userPart, 0.5, 2600)
-        return JSON.parse(raw.match(/\{[\s\S]*\}/)[0])
+        const raw = await callAI(sys, userPart, 0.5, 3400)
+        const m = raw.match(/\{[\s\S]*\}/)
+        if (!m) throw new Error('no-json')
+        return JSON.parse(m[0])
       } catch (e) { lastErr = e }
     }
     throw lastErr
   }
   const SRC = 'Use ONLY the given pool; source indices are integers from the pool that truly support the point; never fabricate statistics, resolution symbols, treaties or quotes.'
+  // 中文概述：所有 zh / *Zh 字段必须用流利简体中文，是英文内容的忠实浓缩，而非逐字机翻
+  const ZH_RULE = 'Every field named zh, thesisZh or countryContextZh MUST be written in fluent Simplified Chinese (简体中文): a faithful, concise summary of the corresponding English content, natural wording, not word-for-word translation.'
   const header = ctxLine({ committee, conference, country, topic }) + (focus ? `\nDelegate focus: ${focus}` : '')
   const poolText = pool.map((s, i) => `[${i}] ${s.title} | ${s.snippet}`).join('\n')
   const baseUser = `${header}\n\nSource pool:\n${poolText}`
 
-  const tasks = [
-    askJSON(
-      'Write {"thesis":"one assertive paragraph: the country central argument, the impact it seeks and why","countryContext":"2-3 sentences: national interests, bloc memberships supported by the pool, policy stance"}.',
+  const taskFns = [
+    () => askJSON(
+      `Write {"thesis":"one assertive paragraph: the country central argument, the impact it seeks and why","thesisZh":"2-3 sentences in Simplified Chinese summarising the thesis","countryContext":"2-3 sentences: national interests, bloc memberships supported by the pool, policy stance","countryContextZh":"1-2 sentences in Simplified Chinese summarising the country context"}. ${ZH_RULE}`,
       baseUser,
     ),
-    askJSON(
-      `Write exactly 3 items: {"arguments":[{"claim":"one assertive sentence, no trailing period","evidence":"2-3 sentences of factual or legal support from the pool","sources":[indices]}]}. ${SRC}`,
+    () => askJSON(
+      `Write exactly 3 items: {"arguments":[{"claim":"one assertive sentence, no trailing period","evidence":"2-3 sentences of factual or legal support from the pool","zh":"1-2 sentences in Simplified Chinese summarising this claim and its key evidence","sources":[indices]}]}. ${SRC} ${ZH_RULE}`,
       baseUser,
     ),
-    askJSON(
-      `Write exactly 2 REAL opposing positions, never straw men: {"counterarguments":[{"view":"opposing claim as one sentence, no trailing period","holders":"states or blocs holding it if the pool shows, otherwise empty string","response":"the delegate rebuttal grounded in the pool","sources":[indices]}]}. ${SRC}`,
+    () => askJSON(
+      `Write exactly 2 REAL opposing positions, never straw men: {"counterarguments":[{"view":"opposing claim as one sentence, no trailing period","holders":"states or blocs holding it if the pool shows, otherwise empty string","response":"the delegate rebuttal grounded in the pool","zh":"1-2 sentences in Simplified Chinese summarising the opposing view and our response","sources":[indices]}]}. ${SRC} ${ZH_RULE}`,
       baseUser,
     ),
-    askJSON(
-      `Apply a Results-Based Management logic model (output -> outcome -> impact). Write 2 steps: {"resultsChain":[{"action":"concrete committee output: mechanism, fund or process, one sentence","outcome":"medium-term change it produces, one sentence","impact":"long-term impact on people, one sentence","sources":[indices]}]}. ${SRC}`,
+    () => askJSON(
+      `Apply a Results-Based Management logic model (output -> outcome -> impact). Write 2 steps: {"resultsChain":[{"action":"concrete committee output: mechanism, fund or process, one sentence","outcome":"medium-term change it produces, one sentence","impact":"long-term impact on people, one sentence","zh":"one sentence in Simplified Chinese summarising this whole results path","sources":[indices]}]}. ${SRC} ${ZH_RULE}`,
       baseUser,
     ),
-    askJSON(
+    () => askJSON(
       'Write {"gaps":[4 items]}: each one sentence naming a specific fact, figure or source type the pool lacks and the delegate should verify before the conference.',
       baseUser,
     ),
   ]
-  const [head, args, counters, chain, gapsJson] = await Promise.all(tasks)
+  const settled = await Promise.allSettled(taskFns.map((f) => f()))
+  const [headR, argsR, countersR, chainR, gapsR] = settled
+  // 非关键子任务失败则降级为空，由下游兜底；关键子任务（核心论点/论点）再各补一次重试
+  const counters = countersR.status === 'fulfilled' ? countersR.value : null
+  const chain = chainR.status === 'fulfilled' ? chainR.value : null
+  const gapsJson = gapsR.status === 'fulfilled' ? gapsR.value : null
+  const head = headR.status === 'fulfilled' ? headR.value : await taskFns[0]()
+  const args = argsR.status === 'fulfilled' ? argsR.value : await taskFns[1]()
 
   const validIdx = (a) => Array.isArray(a) && a.every((i) => Number.isInteger(i) && i >= 0 && i < pool.length)
   const clean = (x) => String(x || '').trim()
@@ -403,12 +414,14 @@ async function stageResearchReport(p) {
 
   const report = {
     thesis: clean(head.thesis),
+    thesisZh: clean(head.thesisZh),
     countryContext: clean(head.countryContext),
+    countryContextZh: clean(head.countryContextZh),
     arguments: Array.isArray(args?.arguments)
       ? args.arguments
         .filter((x) => x && clean(x.claim))
         .slice(0, 3)
-        .map((x) => ({ claim: clean(x.claim).replace(/\.\s*$/, ''), evidence: clean(x.evidence), sources: validIdx(x.sources) ? x.sources : [] }))
+        .map((x) => ({ claim: clean(x.claim).replace(/\.\s*$/, ''), evidence: clean(x.evidence), zh: clean(x.zh), sources: validIdx(x.sources) ? x.sources : [] }))
       : [],
     counterarguments: Array.isArray(counters?.counterarguments)
       ? counters.counterarguments
@@ -416,6 +429,7 @@ async function stageResearchReport(p) {
         .slice(0, 2)
         .map((x) => ({
           view: clean(x.view).replace(/\.\s*$/, ''), holders: clean(x.holders), response: clean(x.response),
+          zh: clean(x.zh),
           sources: validIdx(x.sources) ? x.sources : [],
         }))
       : [],
@@ -427,6 +441,7 @@ async function stageResearchReport(p) {
           action: clean(x.action).replace(/\.\s*$/, ''),
           outcome: clean(x.outcome).replace(/\.\s*$/, ''),
           impact: clean(x.impact).replace(/\.\s*$/, ''),
+          zh: clean(x.zh),
           sources: validIdx(x.sources) ? x.sources : [],
         }))
       : [],

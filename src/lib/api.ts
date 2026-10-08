@@ -82,10 +82,12 @@ export interface BriefSource {
 
 export interface ResearchReport {
   thesis: string
+  thesisZh?: string
   countryContext: string
-  arguments: { claim: string; evidence: string; sources: number[] }[]
-  counterarguments: { view: string; holders: string; response: string; sources: number[] }[]
-  resultsChain: { action: string; outcome: string; impact: string; sources: number[] }[]
+  countryContextZh?: string
+  arguments: { claim: string; evidence: string; zh?: string; sources: number[] }[]
+  counterarguments: { view: string; holders: string; response: string; zh?: string; sources: number[] }[]
+  resultsChain: { action: string; outcome: string; impact: string; zh?: string; sources: number[] }[]
   gaps: string[]
 }
 

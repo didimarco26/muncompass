@@ -16,6 +16,20 @@ import { CopyButton, DownloadButton } from '../components/IOButtons'
 
 const ALL_SOURCES: Source[] = [...SOURCES_DOC, ...ALL_SOURCES_EXTRA]
 
+// 右侧中文概述小块：桌面端固定在内容右侧，窄屏自动落到下方
+function ZhNote({ text, label = '中文概述' }: { text?: string; label?: string }) {
+  if (!text) return null
+  return (
+    <div className="shrink-0 rounded-lg border border-slate-100 bg-white/80 p-3 lg:w-[236px]">
+      <p className="mb-1 flex items-center gap-1 text-[10px] font-bold tracking-wide text-slate-400">
+        <span className="inline-block h-1.5 w-1.5 rounded-full bg-un-500" />
+        {label}
+      </p>
+      <p className="text-[12px] leading-[20px] text-slate-600">{text}</p>
+    </div>
+  )
+}
+
 export default function Research() {
   const [query, setQuery] = useState('sustainability')
   const [applied, setApplied] = useState('sustainability')
@@ -82,15 +96,20 @@ export default function Research() {
     const lines: string[] = []
     lines.push(`RESEARCH BRIEFING — ${brief.country} / ${brief.topic}`)
     if (brief.committee) lines.push(`Committee: ${brief.committee}`)
-    lines.push('', 'CENTRAL THESIS', r.thesis, '', 'COUNTRY CONTEXT', r.countryContext)
+    lines.push('', 'CENTRAL THESIS', r.thesis)
+    if (r.thesisZh) lines.push(`中文概述：${r.thesisZh}`)
+    lines.push('', 'COUNTRY CONTEXT', r.countryContext)
+    if (r.countryContextZh) lines.push(`中文概述：${r.countryContextZh}`)
     r.arguments.forEach((a, i) => {
       lines.push('', `ARGUMENT ${i + 1}: ${a.claim}`, a.evidence)
+      if (a.zh) lines.push(`中文概述：${a.zh}`)
       if (a.sources.length) lines.push(`Sources: ${a.sources.map((k) => s[k]?.url).filter(Boolean).join(' ; ')}`)
     })
     r.counterarguments.forEach((c, i) => {
       lines.push('', `COUNTERARGUMENT ${i + 1}: ${c.view}`)
       if (c.holders) lines.push(`Holders: ${c.holders}`)
       lines.push(`Response: ${c.response}`)
+      if (c.zh) lines.push(`中文概述：${c.zh}`)
       if (c.sources.length) lines.push(`Sources: ${c.sources.map((k) => s[k]?.url).filter(Boolean).join(' ; ')}`)
     })
     if (r.resultsChain?.length) lines.push('', 'RESULTS CHAIN (Output -> Outcome -> Impact)')
@@ -98,6 +117,7 @@ export default function Research() {
       lines.push(`${i + 1}. Output: ${x.action}`)
       if (x.outcome) lines.push(`   Outcome: ${x.outcome}`)
       if (x.impact) lines.push(`   Impact: ${x.impact}`)
+      if (x.zh) lines.push(`   中文概述：${x.zh}`)
       if (x.sources.length) lines.push(`   Sources: ${x.sources.map((k) => s[k]?.url).filter(Boolean).join(' ; ')}`)
     })
     r.gaps.length ? lines.push('', 'GAPS TO VERIFY', ...r.gaps.map((x, i) => `${i + 1}. ${x}`)) : null
@@ -264,11 +284,21 @@ export default function Research() {
               <div className="px-5 md:px-7 py-6 space-y-7">
                 {/* 核心 thesis 与国家背景 */}
                 <div className="rounded-xl border border-un-200 bg-un-50/60 p-5">
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-un-700 mb-1.5">Central Thesis</p>
-                  <p className="text-sm font-semibold leading-[26px] text-slate-900">{briefing.report.thesis}</p>
-                  <p className="mt-3 text-[13px] leading-6 text-slate-600">
-                    <span className="font-bold text-un-700">国家背景：</span>{briefing.report.countryContext}
-                  </p>
+                  <div className="flex flex-col gap-4 lg:flex-row">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-un-700 mb-1.5">Central Thesis</p>
+                      <p className="text-sm font-semibold leading-[26px] text-slate-900">{briefing.report.thesis}</p>
+                      <p className="mt-3 text-[13px] leading-6 text-slate-600">
+                        <span className="font-bold text-un-700">国家背景：</span>{briefing.report.countryContext}
+                      </p>
+                    </div>
+                    {(briefing.report.thesisZh || briefing.report.countryContextZh) && (
+                      <div className="flex shrink-0 flex-col gap-3">
+                        <ZhNote text={briefing.report.thesisZh} label="核心论点 · 中文" />
+                        <ZhNote text={briefing.report.countryContextZh} label="国家背景 · 中文" />
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* 核心论点与论据 */}
@@ -279,21 +309,26 @@ export default function Research() {
                   <div className="space-y-4">
                     {briefing.report.arguments.map((a, i) => (
                       <div key={i} className="rounded-xl border border-slate-150 p-4">
-                        <div className="flex gap-2.5">
-                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-rose-500 text-xs font-bold text-white">{i + 1}</span>
-                          <p className="text-sm font-bold leading-6 text-slate-900">{a.claim}.</p>
-                        </div>
-                        <p className="mt-2 text-[13px] leading-6 text-slate-600 pl-[34px]">{a.evidence}</p>
-                        {a.sources.length > 0 && (
-                          <div className="mt-2.5 flex flex-wrap gap-1.5 pl-[34px]">
-                            {a.sources.map((k) => (
-                              <a key={k} href={briefing.sources[k].url} target="_blank"
-                                className="inline-flex items-center gap-1 rounded-full bg-un-50 px-2.5 py-1 text-[10.5px] font-semibold text-un-800 hover:bg-un-100">
-                                [{k}] {briefing.sources[k].title.slice(0, 48)}{briefing.sources[k].title.length > 48 ? '…' : ''}
-                              </a>
-                            ))}
+                        <div className="flex flex-col gap-3 lg:flex-row">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex gap-2.5">
+                              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-rose-500 text-xs font-bold text-white">{i + 1}</span>
+                              <p className="text-sm font-bold leading-6 text-slate-900">{a.claim}.</p>
+                            </div>
+                            <p className="mt-2 text-[13px] leading-6 text-slate-600 pl-[34px]">{a.evidence}</p>
+                            {a.sources.length > 0 && (
+                              <div className="mt-2.5 flex flex-wrap gap-1.5 pl-[34px]">
+                                {a.sources.map((k) => (
+                                  <a key={k} href={briefing.sources[k].url} target="_blank"
+                                    className="inline-flex items-center gap-1 rounded-full bg-un-50 px-2.5 py-1 text-[10.5px] font-semibold text-un-800 hover:bg-un-100">
+                                    [{k}] {briefing.sources[k].title.slice(0, 48)}{briefing.sources[k].title.length > 48 ? '…' : ''}
+                                  </a>
+                                ))}
+                              </div>
+                            )}
                           </div>
-                        )}
+                          <ZhNote text={a.zh} />
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -308,23 +343,28 @@ export default function Research() {
                     <div className="grid gap-3.5 md:grid-cols-2">
                       {briefing.report.counterarguments.map((c, i) => (
                         <div key={i} className="rounded-xl border border-slate-150 p-4">
-                          <div className="rounded-lg bg-slate-50 p-2.5">
-                            <p className="text-[12.5px] font-semibold leading-5 text-slate-700">对立：{c.view}.</p>
-                            {c.holders && <p className="mt-1 text-[11px] text-slate-400">持方：{c.holders}</p>}
-                          </div>
-                          <p className="mt-2.5 text-[12.5px] leading-[22px] text-slate-600">
-                            <span className="font-bold text-un-700">回应：</span>{c.response}
-                          </p>
-                          {c.sources.length > 0 && (
-                            <div className="mt-2 flex flex-wrap gap-1">
-                              {c.sources.map((k) => (
-                                <a key={k} href={briefing.sources[k].url} target="_blank"
-                                  className="rounded-full bg-un-50 px-2 py-0.5 text-[10px] font-semibold text-un-800 hover:bg-un-100">
-                                  [{k}] 来源
-                                </a>
-                              ))}
+                          <div className="flex flex-col gap-3 lg:flex-row">
+                            <div className="min-w-0 flex-1">
+                              <div className="rounded-lg bg-slate-50 p-2.5">
+                                <p className="text-[12.5px] font-semibold leading-5 text-slate-700">对立：{c.view}.</p>
+                                {c.holders && <p className="mt-1 text-[11px] text-slate-400">持方：{c.holders}</p>}
+                              </div>
+                              <p className="mt-2.5 text-[12.5px] leading-[22px] text-slate-600">
+                                <span className="font-bold text-un-700">回应：</span>{c.response}
+                              </p>
+                              {c.sources.length > 0 && (
+                                <div className="mt-2 flex flex-wrap gap-1">
+                                  {c.sources.map((k) => (
+                                    <a key={k} href={briefing.sources[k].url} target="_blank"
+                                      className="rounded-full bg-un-50 px-2 py-0.5 text-[10px] font-semibold text-un-800 hover:bg-un-100">
+                                      [{k}] 来源
+                                    </a>
+                                  ))}
+                                </div>
+                              )}
                             </div>
-                          )}
+                            <ZhNote text={c.zh} />
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -343,32 +383,37 @@ export default function Research() {
                     <div className="space-y-3">
                       {briefing.report.resultsChain.map((x, i) => (
                         <div key={i} className="rounded-xl border border-slate-150 p-4">
-                          <div className="mb-2 flex items-center gap-1.5">
-                            <span className="flex h-5 w-5 items-center justify-center rounded-md bg-gold-500 text-[10px] font-bold text-white">{i + 1}</span>
-                            <span className="text-[11px] font-bold uppercase tracking-wide text-gold-700">Results Path</span>
-                          </div>
-                          <div className="grid gap-2.5 md:grid-cols-3">
-                            {[
-                              { tag: '产出 Output', val: x.action, color: 'text-rose-600' },
-                              { tag: '成效 Outcome', val: x.outcome, color: 'text-un-700' },
-                              { tag: '影响 Impact', val: x.impact, color: 'text-emerald-600' },
-                            ].map((b) => (
-                              <div key={b.tag} className="rounded-lg bg-slate-50 p-2.5">
-                                <p className={`text-[10px] font-bold ${b.color}`}>{b.tag}</p>
-                                <p className="mt-1 text-[12px] leading-[18px] text-slate-600">{b.val || '—'}</p>
+                          <div className="flex flex-col gap-3 lg:flex-row">
+                            <div className="min-w-0 flex-1">
+                              <div className="mb-2 flex items-center gap-1.5">
+                                <span className="flex h-5 w-5 items-center justify-center rounded-md bg-gold-500 text-[10px] font-bold text-white">{i + 1}</span>
+                                <span className="text-[11px] font-bold uppercase tracking-wide text-gold-700">Results Path</span>
                               </div>
-                            ))}
-                          </div>
-                          {x.sources.length > 0 && (
-                            <div className="mt-2.5 flex flex-wrap gap-1">
-                              {x.sources.map((k) => (
-                                <a key={k} href={briefing.sources[k].url} target="_blank"
-                                  className="rounded-full bg-un-50 px-2 py-0.5 text-[10px] font-semibold text-un-800 hover:bg-un-100">
-                                  [{k}] 来源
-                                </a>
-                              ))}
+                              <div className="grid gap-2.5 md:grid-cols-3">
+                                {[
+                                  { tag: '产出 Output', val: x.action, color: 'text-rose-600' },
+                                  { tag: '成效 Outcome', val: x.outcome, color: 'text-un-700' },
+                                  { tag: '影响 Impact', val: x.impact, color: 'text-emerald-600' },
+                                ].map((b) => (
+                                  <div key={b.tag} className="rounded-lg bg-slate-50 p-2.5">
+                                    <p className={`text-[10px] font-bold ${b.color}`}>{b.tag}</p>
+                                    <p className="mt-1 text-[12px] leading-[18px] text-slate-600">{b.val || '—'}</p>
+                                  </div>
+                                ))}
+                              </div>
+                              {x.sources.length > 0 && (
+                                <div className="mt-2.5 flex flex-wrap gap-1">
+                                  {x.sources.map((k) => (
+                                    <a key={k} href={briefing.sources[k].url} target="_blank"
+                                      className="rounded-full bg-un-50 px-2 py-0.5 text-[10px] font-semibold text-un-800 hover:bg-un-100">
+                                      [{k}] 来源
+                                    </a>
+                                  ))}
+                                </div>
+                              )}
                             </div>
-                          )}
+                            <ZhNote text={x.zh} />
+                          </div>
                         </div>
                       ))}
                     </div>
